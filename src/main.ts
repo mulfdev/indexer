@@ -1,6 +1,12 @@
 import 'dotenv/config';
 import assert from 'node:assert';
-import { createPublicClient, webSocket, type AbiEvent, type AbiItem } from 'viem';
+import {
+    createPublicClient,
+    webSocket,
+    type AbiEvent,
+    type AbiItem,
+    type GetFilterLogsReturnType,
+} from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -25,27 +31,26 @@ const abiPath = join(__dirname, 'abi');
 
 async function main() {
     const batchSize = 5000n;
+    const eventBatchSize = 50;
     let startBlock = 27557040n;
     let endblock = startBlock + batchSize;
     let blockHeight = await publicClient.getBlockNumber();
 
-    try {
-        const abis = await readdir(abiPath);
+    const eventBatch: GetFilterLogsReturnType = [];
 
+    try {
         const eventSigs: AbiEvent[] = [];
 
-        for (const abi of abis) {
-            const content = await readFile(join(abiPath, abi), 'utf8');
-            const data = JSON.parse(content) as AbiItem[];
+        const content = await readFile(join(abiPath, 'MiniMart.json'), 'utf8');
+        const data = JSON.parse(content) as AbiItem[];
 
-            for (const item of data) {
-                if (item.type === 'event') {
-                    eventSigs.push({
-                        name: item.name,
-                        inputs: item.inputs,
-                        type: item.type,
-                    });
-                }
+        for (const item of data) {
+            if (item.type === 'event') {
+                eventSigs.push({
+                    name: item.name,
+                    inputs: item.inputs,
+                    type: item.type,
+                });
             }
         }
 
@@ -73,13 +78,17 @@ async function main() {
             await setTimeout(250);
             const logs = await publicClient.getFilterLogs({ filter });
             if (logs.length != 0) {
-                logs.forEach((log) => {
-                    console.log(log.eventName);
-                    console.log(log.args);
-                });
+                console.log(logs);
+                eventBatch.push(...logs);
             }
         }
-
+        // eventName: 'OrderFulfilled',
+        //     args: {
+        //       orderId: '0x85267016096b63ddbf4aecc032d1188379a2cc75ab649acbec9e61bea4c023a6',
+        //       buyer: '0x193caa0449Ec1135A4c3FACd198da66DE72aC4Ed'
+        //     },
+        //           blockNumber: 27862181n,
+        //        transactionHash
         while (true) {
             console.log('Getting fresh events\n');
 
