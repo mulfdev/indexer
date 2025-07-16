@@ -1,21 +1,22 @@
-export interface EIP712DomainChanged {
-    eventName: 'EIP712DomainChanged';
-    args: null;
+interface EventBase {
     blockNumber: bigint;
     transactionHash: string;
 }
 
-export interface OrderFulfilled {
+export interface EIP712DomainChanged extends EventBase {
+    eventName: 'EIP712DomainChanged';
+    args: null;
+}
+
+export interface OrderFulfilled extends EventBase {
     eventName: 'OrderFulfilled';
     args: {
         orderId: string;
         buyer: string;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
-export interface OrderListed {
+export interface OrderListed extends EventBase {
     eventName: 'OrderListed';
     args: {
         orderId: string;
@@ -24,45 +25,35 @@ export interface OrderListed {
         tokenId: bigint;
         price: bigint;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
-export interface OrderRemoved {
+export interface OrderRemoved extends EventBase {
     eventName: 'OrderRemoved';
     args: {
         orderId: string;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
-export interface OwnershipTransferred {
+export interface OwnershipTransferred extends EventBase {
     eventName: 'OwnershipTransferred';
     args: {
         previousOwner: string;
         newOwner: string;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
-export interface Paused {
+export interface Paused extends EventBase {
     eventName: 'Paused';
     args: {
         account: string;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
-export interface Unpaused {
+export interface Unpaused extends EventBase {
     eventName: 'Unpaused';
     args: {
         account: string;
     };
-    blockNumber: bigint;
-    transactionHash: string;
 }
 
 export type MiniMartEvents =
@@ -73,3 +64,4 @@ export type MiniMartEvents =
     | OwnershipTransferred
     | Paused
     | Unpaused;
+

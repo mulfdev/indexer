@@ -1,18 +1,17 @@
 import 'dotenv/config';
 import assert from 'node:assert';
-import {
-    createPublicClient,
-    webSocket,
-    type AbiEvent,
-    type AbiItem,
-    type GetFilterLogsReturnType,
-} from 'viem';
+import { createPublicClient, webSocket, type AbiEvent, type AbiItem } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { setTimeout } from 'node:timers/promises';
+import { client } from './db.js';
+import format from 'pg-format';
+import type { MiniMartEvents } from '../types/events.js';
+// import type { MiniMartEvents } from '../types/events.js';
+// import type { QueryResult } from 'pg';
 
 const { RPC_URL } = process.env;
 
@@ -31,14 +30,16 @@ const abiPath = join(__dirname, 'abi');
 
 async function main() {
     const batchSize = 5000n;
-    const eventBatchSize = 50;
+    const eventBatchSize = 20;
     let startBlock = 27557040n;
     let endblock = startBlock + batchSize;
     let blockHeight = await publicClient.getBlockNumber();
 
-    const eventBatch: GetFilterLogsReturnType = [];
+    const eventBatch: MiniMartEvents[] = [];
 
     try {
+        await client.connect();
+
         const eventSigs: AbiEvent[] = [];
 
         const content = await readFile(join(abiPath, 'MiniMart.json'), 'utf8');
@@ -75,20 +76,52 @@ async function main() {
             startBlock = endblock + 1n;
             endblock = startBlock + batchSize;
 
-            await setTimeout(250);
             const logs = await publicClient.getFilterLogs({ filter });
-            if (logs.length != 0) {
-                console.log(logs);
-                eventBatch.push(...logs);
+            if (logs.length > 0) {
+                const typedLogs = logs as unknown as MiniMartEvents[];
+
+                eventBatch.push(...typedLogs);
+
+                console.log(`Added ${typedLogs.length} new events to the batch.`);
             }
+            console.log('CURRENT BATCH SIZE: ', eventBatch.length);
+            if (eventBatch.length >= eventBatchSize) {
+                console.log(`Writing ${eventBatch.length} events to the database.`);
+                try {
+                    await client.query('BEGIN');
+
+                    const replacer = (_key: string, value: unknown): unknown => {
+                        if (typeof value === 'bigint') {
+                            return value.toString();
+                        }
+                        return value;
+                    };
+
+                    const formattedEvents = eventBatch.map((event) => [
+                        event.eventName,
+                        JSON.stringify(event.args, replacer),
+                        event.blockNumber.toString(),
+                        event.transactionHash,
+                    ]);
+
+                    const queryText = format(
+                        'INSERT INTO events (event_name, args, block_number, transaction_hash) VALUES %L ON CONFLICT (transaction_hash, event_name) DO NOTHING',
+                        formattedEvents
+                    );
+
+                    await client.query(queryText);
+                    await client.query('COMMIT');
+
+                    console.log('Successfully wrote batch to the database.');
+                    // Clear the batch after successful insertion
+                    eventBatch.length = 0;
+                } catch (e) {
+                    await client.query('ROLLBACK');
+                    console.error('Error writing to the database, rolling back transaction.', e);
+                }
+            }
+            await setTimeout(100);
         }
-        // eventName: 'OrderFulfilled',
-        //     args: {
-        //       orderId: '0x85267016096b63ddbf4aecc032d1188379a2cc75ab649acbec9e61bea4c023a6',
-        //       buyer: '0x193caa0449Ec1135A4c3FACd198da66DE72aC4Ed'
-        //     },
-        //           blockNumber: 27862181n,
-        //        transactionHash
         while (true) {
             console.log('Getting fresh events\n');
 
@@ -98,7 +131,6 @@ async function main() {
                 fromBlock: blockHeight,
             });
 
-            console.log(newEvtLogs);
             blockHeight = await publicClient.getBlockNumber();
         }
     } catch (e) {
