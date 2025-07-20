@@ -1,6 +1,7 @@
 interface EventBase {
     blockNumber: bigint;
     transactionHash: string;
+    logIndex: number;
 }
 
 export interface EIP712DomainChanged extends EventBase {
@@ -64,4 +65,3 @@ export type MiniMartEvents =
     | OwnershipTransferred
     | Paused
     | Unpaused;
-
