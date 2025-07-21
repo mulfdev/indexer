@@ -1,14 +1,29 @@
 import 'dotenv/config';
-import { Client } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import type { MiniMartEvents } from '../../types/events.js';
 import format from 'pg-format';
 
-export const client = new Client();
+export const pool = new Pool();
 
-export async function writeBatchToDB(eventBatch: MiniMartEvents[]) {
+async function withTransaction<T>(
+    callback: (client: PoolClient) => Promise<T>
+): Promise<T> {
+    const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        const result = await callback(client);
+        await client.query('COMMIT');
+        return result;
+    } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+    } finally {
+        client.release();
+    }
+}
 
+export async function writeBatchToDB(eventBatch: MiniMartEvents[]) {
+    await withTransaction(async (client) => {
         const replacer = (_key: string, value: unknown): unknown => {
             if (typeof value === 'bigint') {
                 return value.toString();
@@ -30,15 +45,8 @@ export async function writeBatchToDB(eventBatch: MiniMartEvents[]) {
         );
 
         await client.query(queryText);
+    });
 
-        await client.query('COMMIT');
-
-        console.log(`Successfully wrote ${eventBatch.length} unique events to the database.`);
-
-        eventBatch.length = 0;
-    } catch (e) {
-        await client.query('ROLLBACK');
-        console.error('Error writing to the database, rolling back transaction.', e);
-        throw e;
-    }
+    console.log(`Successfully wrote ${eventBatch.length} unique events to the database.`);
+    eventBatch.length = 0;
 }

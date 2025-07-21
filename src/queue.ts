@@ -8,7 +8,6 @@ const deadletterQueue: MiniMartEvents[] = [];
 
 export function enque(newItems: MiniMartEvents[]) {
     queue.push(...newItems);
-    void processQueue();
 }
 
 export async function processQueue() {
@@ -23,8 +22,8 @@ export async function processQueue() {
 
     const itemsToProcess: MiniMartEvents[] = [];
 
-    if (queue.length > 20) {
-        itemsToProcess.push(...queue.splice(0, 20));
+    if (queue.length > 1500) {
+        itemsToProcess.push(...queue.splice(0, 5000));
     } else {
         itemsToProcess.push(...queue);
         queue.length = 0;
@@ -34,6 +33,7 @@ export async function processQueue() {
         while (retries > 0 && !success) {
             try {
                 await writeBatchToDB(itemsToProcess);
+                console.log('Queue length: ', queue.length);
                 success = true;
             } catch (e) {
                 retries--;
@@ -48,6 +48,8 @@ export async function processQueue() {
     } finally {
         locked = false;
     }
-
-    void processQueue();
 }
+
+setInterval(() => {
+    void processQueue();
+}, 750);

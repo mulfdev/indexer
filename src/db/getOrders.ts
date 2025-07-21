@@ -1,37 +1,30 @@
-import { client } from './db.js';
+import { pool } from './db.js';
 
 async function getOrders() {
-    await client.connect();
-
-    const orders = await client.query(`
-    WITH latest_events AS (
-        SELECT
-            event_name,
-            args,
-            block_number,
-            transaction_hash,
-            ROW_NUMBER() OVER (
-                PARTITION BY (args ->> 'orderId')
-                ORDER BY
-                    CAST(block_number AS BIGINT) DESC
-            ) AS rn
-        FROM
-            events
-        WHERE
-            event_name IN ('OrderListed', 'OrderFulfilled', 'OrderRemoved')
-    )
-    SELECT
+    // For optimal performance, consider creating this index in your database:
+    // CREATE INDEX idx_events_args_orderId_block_number ON events ((args ->> 'orderId'), block_number DESC);
+    const client = await pool.connect();
+    let orders;
+    try {
+        orders = await client.query(`
+    SELECT DISTINCT ON (args ->> 'orderId')
         event_name,
         args,
         block_number,
         transaction_hash
     FROM
-        latest_events
+        events
     WHERE
-        rn = 1
-        AND event_name = 'OrderListed';
+        event_name IN ('OrderListed', 'OrderFulfilled', 'OrderRemoved')
+    ORDER BY
+        args ->> 'orderId', block_number DESC;
 `);
-    console.log(orders.rows);
+    } finally {
+        client.release();
+    }
+    const listedOrders = orders.rows.filter((order) => order.event_name === 'OrderListed');
+    console.log(listedOrders.length, 'events total');
+    await pool.end();
 }
 
 getOrders()

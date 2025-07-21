@@ -3,13 +3,14 @@ import assert from 'node:assert';
 import { createPublicClient, http, type AbiItem, type AbiEvent } from 'viem';
 import { baseSepolia } from 'viem/chains';
 
-import { client } from './db/db.js';
+import { pool } from './db/db.js';
 import type { MiniMartEvents } from '../types/events.js';
 import { minimartAbi } from './abi/MiniMart.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { enque } from './queue.js';
+import { wethAbi } from './abi/weth.js';
 
 const { RPC_URL } = process.env;
 
@@ -33,16 +34,24 @@ interface MaxBlockResult {
 }
 
 async function main() {
-    const batchSize = 480n;
-    let startBlock = 27557040n;
+    const batchSize = 100n;
+    let startBlock = 4719568n;
     let blockHeight = await publicClient.getBlockNumber();
 
     console.log('indexer running\n');
     try {
-        await client.connect();
-        const lastBlockSaved = (await client.query(
-            'SELECT MAX(block_number) from events'
-        )) as MaxBlockResult;
+        const client = await pool.connect();
+        let lastBlockSaved: MaxBlockResult;
+        try {
+            lastBlockSaved = (await client.query(
+                'SELECT MAX(block_number) from events'
+            )) as MaxBlockResult;
+
+            const totalLogs = await client.query('SELECT COUNT(*) from events');
+            console.log(totalLogs);
+        } finally {
+            client.release();
+        }
         const maxValue = lastBlockSaved.rows[0]?.max;
 
         let blockNumber: bigint | null = null;
@@ -70,8 +79,8 @@ async function main() {
             }
 
             const filter = await publicClient.createContractEventFilter({
-                abi: minimartAbi,
-                address: '0xD752F23C1C5b82c1b749ff048B7edc0b70AC5C5A',
+                abi: wethAbi,
+                address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
                 fromBlock: startBlock,
                 toBlock: toBlock,
             });
